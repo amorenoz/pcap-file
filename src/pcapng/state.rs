@@ -30,7 +30,7 @@ use {
 /// with [`PcapNgState::default`], and then update it by calling
 /// [`PcapNgState::update_from_block`] or [`PcapNgState::update_from_raw_block`].
 ///
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct PcapNgState {
     /// Current section of the pcapng
     pub(crate) section: SectionHeaderBlock<'static>,
