@@ -2,6 +2,17 @@ use std::io::{Error, ErrorKind, Read};
 
 use crate::PcapError;
 
+/// Trait implemented by parsers.
+pub(crate) trait Parser<'a, Item: 'a, State> where Self: Sized {
+    /// Gets the next item from the parser.
+    fn next_item(&self, src: &'a [u8]) -> Result<(&'a [u8], Item), PcapError>;
+
+    /// Updates the parser state for the item.
+    fn update_state(&mut self, item: &Item) -> Result<(), PcapError>;
+
+    /// Gets the current state from the parser.
+    fn state(&self) -> &State;
+}
 
 /// Internal structure that bufferize its input and allow to parse element from its buffer.
 #[derive(Debug)]
@@ -34,11 +45,11 @@ impl<R: Read> ReadBuffer<R> {
     /// Safety
     ///
     /// The parser must NOT keep a reference to the buffer in input.
-    pub fn parse_with<'a, 'b: 'a, 'c: 'a, F, O>(&'c mut self, mut parser: F) -> Result<O, PcapError>
+    pub fn parse_with<'a, 'b: 'a, 'c: 'a, 'd: 'a, P, O, S>(&'c mut self, parser: &'d mut P) -> Result<(O, &'d S), PcapError>
     where
-        F: FnMut(&'a [u8]) -> Result<(&'a [u8], O), PcapError>,
-        F: 'b,
+        P: Parser<'a, O, S> + 'b,
         O: 'a,
+        S: 'd,
     {
         loop {
             let buf = &self.buffer[self.pos..self.len];
@@ -46,11 +57,8 @@ impl<R: Read> ReadBuffer<R> {
             // Sound because 'b and 'c must outlive 'a so the buffer cannot be modified while someone has a ref on it
             let buf: &'a [u8] = unsafe { std::mem::transmute(buf) };
 
-            match parser(buf) {
-                Ok((rem, value)) => {
-                    self.advance_with_slice(rem);
-                    return Ok(value);
-                },
+            let (rem, item) = match parser.next_item(buf) {
+                Ok(x) => x,
 
                 Err(PcapError::IncompleteBuffer) => {
                     // The parsed data len should never be more than the buffer capacity
@@ -62,10 +70,18 @@ impl<R: Read> ReadBuffer<R> {
                     if nb_read == 0 {
                         return Err(PcapError::IoError(Error::from(ErrorKind::UnexpectedEof)));
                     }
+
+                    continue;
                 },
 
                 Err(e) => return Err(e),
-            }
+            };
+
+            parser.update_state(&item)?;
+
+            self.advance_with_slice(rem);
+
+            return Ok((item, parser.state()))
         }
     }
 

@@ -6,6 +6,7 @@ use super::blocks::enhanced_packet::EnhancedPacketBlock;
 use super::blocks::interface_description::InterfaceDescriptionBlock;
 use super::blocks::section_header::SectionHeaderBlock;
 use crate::errors::PcapError;
+use crate::read_buffer::Parser;
 use crate::Endianness;
 
 
@@ -115,5 +116,62 @@ impl PcapNgParser {
     /// Returns the [`InterfaceDescriptionBlock`] corresponding to the given packet.
     pub fn packet_interface(&self, packet: &EnhancedPacketBlock) -> Option<&InterfaceDescriptionBlock> {
         self.state.interfaces.get(packet.interface_id as usize)
+    }
+}
+
+impl<'a> Parser<'a, PcapNgParser, ()> for () {
+    fn next_item(&self, src: &'a [u8])
+        -> Result<(&'a [u8], PcapNgParser), PcapError>
+    {
+        PcapNgParser::new(src)
+    }
+
+    fn update_state(&mut self, _item: &PcapNgParser) -> Result<(), PcapError> {
+        Ok(())
+    }
+
+    fn state(&self) -> &() {
+        &()
+    }
+}
+
+impl<'a> Parser<'a, Block<'a>, PcapNgState> for PcapNgParser {
+    fn next_item(&self, src: &'a [u8])
+        -> Result<(&'a [u8], Block<'a>), PcapError>
+    {
+        match self.state.section.endianness {
+            Endianness::Big => Block::from_slice::<BigEndian>(&self.state, src),
+            Endianness::Little => Block::from_slice::<LittleEndian>(&self.state, src),
+        }
+    }
+
+    fn update_state(&mut self, block: &Block<'a>) -> Result<(), PcapError> {
+        self.state.update_from_block(block)
+    }
+
+    fn state(&self) -> &PcapNgState {
+        &self.state
+    }
+}
+
+impl<'a> Parser<'a, RawBlock<'a>, PcapNgState> for PcapNgParser {
+    fn next_item<'b>(&self, src: &'a [u8])
+        -> Result<(&'a [u8], RawBlock<'a>), PcapError>
+    {
+        match self.state.section.endianness {
+            Endianness::Big => RawBlock::from_slice::<BigEndian>(src),
+            Endianness::Little => RawBlock::from_slice::<LittleEndian>(src),
+        }
+    }
+
+    fn update_state(&mut self, block: &RawBlock<'a>) -> Result<(), PcapError> {
+        match self.state.section.endianness {
+            Endianness::Big => self.state.update_from_raw_block::<BigEndian>(block),
+            Endianness::Little => self.state.update_from_raw_block::<LittleEndian>(block),
+        }
+    }
+
+    fn state(&self) -> &PcapNgState {
+        &self.state
     }
 }

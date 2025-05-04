@@ -3,6 +3,7 @@ use byteorder_slice::{BigEndian, LittleEndian};
 use super::RawPcapPacket;
 use crate::errors::*;
 use crate::pcap::{PcapHeader, PcapPacket};
+use crate::read_buffer::Parser;
 use crate::Endianness;
 
 
@@ -76,5 +77,53 @@ impl PcapParser {
     /// Returns the header of the pcap file.
     pub fn header(&self) -> PcapHeader {
         self.header
+    }
+}
+
+impl<'a> Parser<'a, PcapParser, ()> for () {
+    fn next_item(&self, src: &'a [u8])
+        -> Result<(&'a [u8], PcapParser), PcapError>
+    {
+        PcapParser::new(src)
+    }
+
+    fn update_state(&mut self, _item: &PcapParser) -> Result<(), PcapError> {
+        Ok(())
+    }
+
+    fn state(&self) -> &() {
+        &()
+    }
+}
+
+impl<'a> Parser<'a, PcapPacket<'a>, PcapHeader> for PcapParser {
+    fn next_item(&self, src: &'a [u8])
+        -> Result<(&'a [u8], PcapPacket<'a>), PcapError>
+    {
+        self.next_packet(src)
+    }
+
+    fn update_state(&mut self, _packet: &PcapPacket) -> Result<(), PcapError> {
+        Ok(())
+    }
+
+    fn state(&self) -> &PcapHeader {
+        &self.header
+    }
+}
+
+impl<'a> Parser<'a, RawPcapPacket<'a>, PcapHeader> for PcapParser {
+    fn next_item(&self, src: &'a [u8])
+        -> Result<(&'a [u8], RawPcapPacket<'a>), PcapError>
+    {
+        self.next_raw_packet(src)
+    }
+
+    fn update_state(&mut self, _packet: &RawPcapPacket) -> Result<(), PcapError> {
+        Ok(())
+    }
+
+    fn state(&self) -> &PcapHeader {
+        &self.header
     }
 }
