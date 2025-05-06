@@ -4,7 +4,7 @@ use super::blocks::block_common::{Block, RawBlock};
 use super::blocks::enhanced_packet::EnhancedPacketBlock;
 use super::blocks::interface_description::InterfaceDescriptionBlock;
 use super::blocks::section_header::SectionHeaderBlock;
-use super::PcapNgParser;
+use super::{PcapNgParser, PcapNgState};
 use crate::errors::PcapError;
 use crate::read_buffer::ReadBuffer;
 
@@ -45,21 +45,27 @@ impl<R: Read> PcapNgReader<R> {
         Ok(Self { parser, reader })
     }
 
-    /// Returns the next [`Block`].
-    pub fn next_block(&mut self) -> Option<Result<Block, PcapError>> {
+    /// Returns the next [`Block`] and the current [`PcapNgState`].
+    pub fn next_block_and_state(&mut self) -> Option<Result<(Block, &PcapNgState), PcapError>> {
         match self.reader.has_data_left() {
             Ok(has_data) => {
                 if has_data {
-                    Some(self.reader
-                        .parse_with(&mut self.parser)
-                        .map(|(block, _state)| block)
-                    )
+                    Some(self.reader.parse_with(&mut self.parser))
                 }
                 else {
                     None
                 }
             },
             Err(e) => Some(Err(PcapError::IoError(e))),
+        }
+    }
+
+    /// Returns the next [`Block`].
+    pub fn next_block(&mut self) -> Option<Result<Block, PcapError>> {
+        match self.next_block_and_state() {
+            None => None,
+            Some(Ok((block, _state))) => Some(Ok(block)),
+            Some(Err(e)) => Some(Err(e))
         }
     }
 
