@@ -37,6 +37,10 @@ pub enum PcapError {
     /// The packet's timestamp is too big (only for Pcap NG)
     #[error("Packet's timestamp too big, please choose a bigger timestamp resolution")]
     TimestampTooBig,
+
+    /// Custom block with PEN not registered for decoding.
+    #[error("Custom PEN not registered: {0}")]
+    UnknownPEN(u32),
 }
 
 impl From<std::str::Utf8Error> for PcapError {

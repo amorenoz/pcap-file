@@ -1,14 +1,14 @@
 use byteorder_slice::{BigEndian, ByteOrder, LittleEndian};
 
-use super::PcapNgState;
 use super::blocks::block_common::{Block, RawBlock};
+use super::blocks::custom::PcapNgCustomReader;
 use super::blocks::enhanced_packet::EnhancedPacketBlock;
 use super::blocks::interface_description::InterfaceDescriptionBlock;
 use super::blocks::section_header::SectionHeaderBlock;
+use super::state::{PcapNgCustomBlockParser, PcapNgState};
+use crate::Endianness;
 use crate::errors::PcapError;
 use crate::read_buffer::Parser;
-use crate::Endianness;
-
 
 /// Parses a PcapNg from a slice of bytes.
 ///
@@ -68,6 +68,18 @@ impl PcapNgParser {
         let parser = PcapNgParser { state };
 
         Ok((rem, parser))
+    }
+
+    /// Registers a new custom payload type with the registry.
+    pub fn register<T: PcapNgCustomReader>(&mut self, pen: u32) {
+        let parser: PcapNgCustomBlockParser = |state, slice| {
+            let (rem, payload) = match state.section.endianness {
+                Endianness::Big => T::from_slice::<BigEndian>(state, slice)?,
+                Endianness::Little => T::from_slice::<LittleEndian>(state, slice)?,
+            };
+            Ok((rem, Box::new(payload)))
+        };
+        self.state.custom_parsers.insert(pen, parser);
     }
 
     /// Returns the remainder and the next [`Block`].

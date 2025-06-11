@@ -169,9 +169,9 @@ pub enum Block<'a> {
     /// Systemd Journal Export block
     SystemdJournalExport(SystemdJournalExportBlock<'a>),
     /// Custom block, copiable
-    CustomCopiable(CustomBlock<'a, true>),
+    CustomCopiable(CustomBlock<true>),
     /// Custom block, non-copiable
-    CustomNonCopiable(CustomBlock<'a, false>),
+    CustomNonCopiable(CustomBlock<false>),
     /// Unknown block
     Unknown(UnknownBlock<'a>),
 }
@@ -401,7 +401,7 @@ impl<'a> Block<'a> {
     }
 
     /// Tries to downcast the current block into a copiable [`CustomBlock`], if possible
-    pub fn into_custom_copiable(self) -> Option<CustomBlock<'a, true>> {
+    pub fn into_custom_copiable(self) -> Option<CustomBlock<true>> {
         match self {
             Block::CustomCopiable(a) => Some(a),
             _ => None,
@@ -409,7 +409,7 @@ impl<'a> Block<'a> {
     }
 
     /// Tries to downcast the current block as a copiable [`CustomBlock`], if possible
-    pub fn as_custom_copiable(&self) -> Option<&CustomBlock<'a, true>> {
+    pub fn as_custom_copiable(&self) -> Option<&CustomBlock<true>> {
         match self {
             Block::CustomCopiable(a) => Some(a),
             _ => None,
@@ -417,7 +417,7 @@ impl<'a> Block<'a> {
     }
 
     /// Tries to downcast the current block into a non-copiable [`CustomBlock`], if possible
-    pub fn into_custom_non_copiable(self) -> Option<CustomBlock<'a, false>> {
+    pub fn into_custom_non_copiable(self) -> Option<CustomBlock<false>> {
         match self {
             Block::CustomNonCopiable(a) => Some(a),
             _ => None,
@@ -425,7 +425,7 @@ impl<'a> Block<'a> {
     }
 
     /// Tries to downcast the current block as a non-copiable [`CustomBlock`], if possible
-    pub fn as_custom_non_copiable(&self) -> Option<&CustomBlock<'a, false>> {
+    pub fn as_custom_non_copiable(&self) -> Option<&CustomBlock<false>> {
         match self {
             Block::CustomNonCopiable(a) => Some(a),
             _ => None,

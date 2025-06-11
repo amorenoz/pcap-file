@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::io::Write;
 use std::time::Duration;
 
@@ -6,6 +7,7 @@ use byteorder_slice::byteorder::WriteBytesExt;
 use byteorder_slice::result::ReadSlice;
 
 use super::blocks::block_common::{Block, RawBlock};
+use super::blocks::custom::PcapNgCustom;
 use super::blocks::interface_description::{InterfaceDescriptionBlock, TsResolution};
 use super::blocks::section_header::SectionHeaderBlock;
 use super::blocks::{INTERFACE_DESCRIPTION_BLOCK, SECTION_HEADER_BLOCK};
@@ -14,8 +16,8 @@ use crate::errors::PcapError;
 #[cfg(doc)]
 use {
     super::blocks::interface_description::InterfaceDescriptionOption,
-    crate::pcapng::{PcapNgReader, PcapNgWriter},
     crate::Endianness,
+    crate::pcapng::{PcapNgReader, PcapNgWriter},
 };
 
 /// State that must be maintained whilst reading or writing a PcapNg stream.
@@ -38,6 +40,8 @@ pub struct PcapNgState {
     pub(crate) interfaces: Vec<InterfaceDescriptionBlock<'static>>,
     /// Timestamp resolutions and offsets corresponding to the interfaces
     pub(crate) ts_parameters: Vec<(TsResolution, Duration)>,
+    /// Custom parsers
+    pub(crate) custom_parsers: HashMap<u32, PcapNgCustomBlockParser>,
 }
 
 impl PcapNgState {
@@ -77,27 +81,20 @@ impl PcapNgState {
                 let block = raw_block.clone().try_into_block::<B>(self)?;
                 self.update_from_block(&block)
             },
-            _ => Ok(())
+            _ => Ok(()),
         }
     }
 
     /// Decode a timestamp using the correct format for the current state.
     pub fn decode_timestamp<B: ByteOrder>(&self, interface_id: u32, slice: &mut &[u8]) -> Result<Duration, PcapError> {
+        let timestamp_high = slice.read_u32::<B>().map_err(|_| PcapError::IncompleteBuffer)? as u64;
 
-        let timestamp_high = slice
-            .read_u32::<B>()
-            .map_err(|_| PcapError::IncompleteBuffer)? as u64;
-
-        let timestamp_low = slice
-            .read_u32::<B>()
-            .map_err(|_| PcapError::IncompleteBuffer)? as u64;
+        let timestamp_low = slice.read_u32::<B>().map_err(|_| PcapError::IncompleteBuffer)? as u64;
 
         let ts_raw = (timestamp_high << 32) + timestamp_low;
 
-        let (ts_resolution, ts_offset) = self
-            .ts_parameters
-            .get(interface_id as usize)
-            .ok_or(PcapError::InvalidInterfaceId(interface_id))?;
+        let (ts_resolution, ts_offset) =
+            self.ts_parameters.get(interface_id as usize).ok_or(PcapError::InvalidInterfaceId(interface_id))?;
 
         let ts_nanos = ts_raw * ts_resolution.to_nano_secs() as u64;
 
@@ -105,20 +102,20 @@ impl PcapNgState {
     }
 
     /// Encode a timestamp using the correct format for the current state.
-    pub fn encode_timestamp<B: ByteOrder, W: Write>(&self, interface_id: u32, timestamp: Duration, writer: &mut W) -> Result<(), PcapError> {
-
-        let (ts_resolution, ts_offset) = self
-            .ts_parameters
-            .get(interface_id as usize)
-            .ok_or(PcapError::InvalidInterfaceId(interface_id))?;
+    pub fn encode_timestamp<B: ByteOrder, W: Write>(
+        &self,
+        interface_id: u32,
+        timestamp: Duration,
+        writer: &mut W,
+    ) -> Result<(), PcapError> {
+        let (ts_resolution, ts_offset) =
+            self.ts_parameters.get(interface_id as usize).ok_or(PcapError::InvalidInterfaceId(interface_id))?;
 
         let ts_relative = timestamp - *ts_offset;
 
         let ts_raw = ts_relative.as_nanos() / ts_resolution.to_nano_secs() as u128;
 
-        let ts_raw: u64 = ts_raw
-            .try_into()
-            .or(Err(PcapError::TimestampTooBig))?;
+        let ts_raw: u64 = ts_raw.try_into().or(Err(PcapError::TimestampTooBig))?;
 
         let timestamp_high = (ts_raw >> 32) as u32;
         let timestamp_low = (ts_raw & 0xFFFFFFFF) as u32;
@@ -129,3 +126,6 @@ impl PcapNgState {
         Ok(())
     }
 }
+
+/// A type alias for a parser function that can interpret a raw payload.
+pub(crate) type PcapNgCustomBlockParser = for<'a> fn(&PcapNgState, &'a [u8]) -> Result<(&'a [u8], Box<dyn PcapNgCustom>), PcapError>;
